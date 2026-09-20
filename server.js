@@ -130,15 +130,21 @@ async function playNextSong(guildId, messageChannel) {
   const currentSong = serverQueue.songs[0];
 
   try {
-    const stream = await play.stream(currentSong.url);
-    const resource = createAudioResource(stream.stream, { inputType: stream.type });
+    const stream = await play.stream(currentSong.url, {
+      discordPlayerCompatibility: true,
+      htmldata: false
+    });
+
+    const resource = createAudioResource(stream.stream, { 
+      inputType: stream.type 
+    });
 
     serverQueue.player.play(resource);
     serverQueue.connection.subscribe(serverQueue.player);
 
     messageChannel.send(`🎶 Now playing: **${currentSong.title}**`);
   } catch (error) {
-    console.error('Playback error:', error);
+    console.error('Playback error details:', error);
     messageChannel.send(`❌ Could not play **${currentSong.title}**. Skipping to next...`);
     serverQueue.songs.shift();
     playNextSong(guildId, messageChannel);
@@ -224,42 +230,16 @@ client.on('messageCreate', async (message) => {
             playNextSong(message.guild.id, message.channel);
           });
 
-          // Helper Function: Play Next Song in Queue
-async function playNextSong(guildId, messageChannel) {
-  const serverQueue = musicQueues.get(guildId);
-  if (!serverQueue) return;
-
-  if (serverQueue.songs.length === 0) {
-    if (serverQueue.connection) serverQueue.connection.destroy();
-    musicQueues.delete(guildId);
-    return messageChannel.send('🎶 Queue finished. Left the voice channel.');
-  }
-
-  const currentSong = serverQueue.songs[0];
-
-  try {
-    // Force quality & bypass cloud IP restrictions
-    const stream = await play.stream(currentSong.url, {
-      discordPlayerCompatibility: true,
-      htmldata: false
-    });
-
-    const resource = createAudioResource(stream.stream, { 
-      inputType: stream.type 
-    });
-
-    serverQueue.player.play(resource);
-    serverQueue.connection.subscribe(serverQueue.player);
-
-    messageChannel.send(`🎶 Now playing: **${currentSong.title}**`);
-  } catch (error) {
-    console.error('Playback error details:', error);
-    messageChannel.send(`❌ Could not play **${currentSong.title}**. Skipping to next...`);
-    serverQueue.songs.shift();
-    playNextSong(guildId, messageChannel);
-  }
-}
-
+          playNextSong(message.guild.id, message.channel);
+        } else {
+          serverQueue.songs.push(song);
+          return message.reply(`✅ Added **${song.title}** to the queue! (Position #${serverQueue.songs.length})`);
+        }
+      } catch (err) {
+        console.error('Play error:', err);
+        return message.reply('❌ Failed to process music command.');
+      }
+    }
     // Command: !skip
     else if (command === '!skip') {
       if (!serverQueue || serverQueue.songs.length === 0) {
@@ -268,21 +248,18 @@ async function playNextSong(guildId, messageChannel) {
       message.reply('⏭️ Skipped current song.');
       serverQueue.player.stop(); // Triggers AudioPlayerStatus.Idle to play next
     }
-
     // Command: !pause
     else if (command === '!pause') {
       if (!serverQueue) return message.reply('❌ Nothing is playing.');
       serverQueue.player.pause();
       message.reply('⏸️ Paused the music.');
     }
-
     // Command: !resume
     else if (command === '!resume') {
       if (!serverQueue) return message.reply('❌ Nothing is paused.');
       serverQueue.player.unpause();
       message.reply('▶️ Resumed the music.');
     }
-
     // Command: !queue
     else if (command === '!queue') {
       if (!serverQueue || serverQueue.songs.length === 0) {
@@ -294,7 +271,6 @@ async function playNextSong(guildId, messageChannel) {
       });
       message.reply(queueMessage);
     }
-
     // Command: !stop
     else if (command === '!stop') {
       if (!serverQueue) return message.reply('❌ The bot is not playing music.');
