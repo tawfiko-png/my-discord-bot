@@ -12,6 +12,7 @@ const {
   NoSubscriberBehavior
 } = require('@discordjs/voice');
 const play = require('play-dl');
+const ytdl = require('@distube/ytdl-core');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -142,20 +143,26 @@ function fetchYouTubeTitleViaOEmbed(videoId) {
   });
 }
 
-async function searchSoundCloudTrack(query) {
-  try {
-    const cleaned = cleanTitle(query);
-    let results = await play.search(cleaned, { source: { soundcloud: 'tracks' }, limit: 1 });
-    if ((!results || results.length === 0) && cleaned !== query) {
-      results = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+// Resilient Stream Fetcher: Tries play-dl first, then falls back to @distube/ytdl-core
+async function getAudioStream(song) {
+  if (song.source === 'youtube') {
+    try {
+      const stream = ytdl(song.url, {
+        filter: 'audioonly',
+        highWaterMark: 1 << 25,
+        quality: 'highestaudio'
+      });
+      return createAudioResource(stream);
+    } catch (e) {
+      console.log('ytdl-core failed, attempting play-dl fallback...');
+      const playStream = await play.stream(song.url);
+      return createAudioResource(playStream.stream, { inputType: playStream.type });
     }
-    if (results && results.length > 0) {
-      return { url: results[0].url, title: results[0].name };
-    }
-  } catch (err) {
-    console.error('SoundCloud Search Error:', err.message);
+  } else {
+    // SoundCloud stream
+    const playStream = await play.stream(song.url);
+    return createAudioResource(playStream.stream, { inputType: playStream.type });
   }
-  return null;
 }
 
 async function playNextSong(guildId, messageChannel) {
@@ -171,17 +178,14 @@ async function playNextSong(guildId, messageChannel) {
   const currentSong = serverQueue.songs[0];
 
   try {
-    // Stream via play-dl with error handling
-    const stream = await play.stream(currentSong.url, { quality: 2 });
-    const resource = createAudioResource(stream.stream, { inputType: stream.type });
-
+    const resource = await getAudioStream(currentSong);
     serverQueue.player.play(resource);
     serverQueue.connection.subscribe(serverQueue.player);
 
     messageChannel.send(`🎶 Now playing: **${currentSong.title}**`);
   } catch (error) {
     console.error('Playback error:', error);
-    messageChannel.send(`❌ Error playing **${currentSong.title}**. Trying next song...`);
+    messageChannel.send(`❌ Error playing **${currentSong.title}**. Skipping to next...`);
     serverQueue.songs.shift();
     playNextSong(guildId, messageChannel);
   }
@@ -189,14 +193,6 @@ async function playNextSong(guildId, messageChannel) {
 
 client.on('clientReady', async () => {
   console.log(`✅ BOT IS ONLINE! Logged in as: ${client.user.tag}`);
-
-  try {
-    const scClientID = await play.getFreeClientID();
-    await play.setToken({ soundcloud: { client_id: scClientID } });
-    console.log('✅ SoundCloud Client ID successfully generated.');
-  } catch (e) {
-    console.error('⚠️ Could not initialize SoundCloud Client ID:', e.message);
-  }
 });
 
 client.on('messageCreate', async (message) => {
@@ -234,35 +230,54 @@ client.on('messageCreate', async (message) => {
       if (!rawQuery) return message.reply('❌ Please provide a song name or link! Usage: `!play song name`');
 
       try {
-        let foundTrack = null;
-        let searchQuery = rawQuery;
+        let songInfo = null;
 
+        // 1. Direct YouTube Video Check
         const videoId = extractYouTubeVideoId(rawQuery);
         if (videoId) {
           const ytTitle = await fetchYouTubeTitleViaOEmbed(videoId);
-          if (ytTitle) searchQuery = ytTitle;
+          songInfo = {
+            title: ytTitle || 'YouTube Track',
+            url: `https://www.youtube.com/watch?v=${videoId}`,
+            source: 'youtube'
+          };
         }
 
-        // Try SoundCloud search first
-        foundTrack = await searchSoundCloudTrack(searchQuery);
-
-        // Fallback: If SoundCloud search returned nothing, search YouTube for url
-        if (!foundTrack) {
+        // 2. Text Search (YouTube Primary via play-dl / ytdl)
+        if (!songInfo) {
           try {
-            const ytResults = await play.search(searchQuery, { limit: 1 });
+            const ytResults = await play.search(rawQuery, { limit: 1 });
             if (ytResults && ytResults.length > 0) {
-              foundTrack = { url: ytResults[0].url, title: ytResults[0].title };
+              songInfo = {
+                title: ytResults[0].title,
+                url: ytResults[0].url,
+                source: 'youtube'
+              };
             }
-          } catch (ytErr) {
-            console.error('YouTube search fallback failed:', ytErr.message);
+          } catch (e) {
+            console.error('YouTube search error:', e.message);
           }
         }
 
-        if (!foundTrack) {
-          return message.reply(`❌ No track found for: **${searchQuery}**`);
+        // 3. SoundCloud Search Fallback
+        if (!songInfo) {
+          try {
+            const scResults = await play.search(rawQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
+            if (scResults && scResults.length > 0) {
+              songInfo = {
+                title: scResults[0].name,
+                url: scResults[0].url,
+                source: 'soundcloud'
+              };
+            }
+          } catch (e) {
+            console.error('SoundCloud search error:', e.message);
+          }
         }
 
-        const song = { title: foundTrack.title, url: foundTrack.url };
+        if (!songInfo) {
+          return message.reply(`❌ Could not find any audio stream for: **${rawQuery}**`);
+        }
 
         if (!serverQueue) {
           const player = createAudioPlayer({
@@ -281,7 +296,7 @@ client.on('messageCreate', async (message) => {
           };
 
           musicQueues.set(message.guild.id, queueConstruct);
-          queueConstruct.songs.push(song);
+          queueConstruct.songs.push(songInfo);
 
           const connection = joinVoiceChannel({
             channelId: voiceChannel.id,
@@ -305,8 +320,8 @@ client.on('messageCreate', async (message) => {
 
           playNextSong(message.guild.id, message.channel);
         } else {
-          serverQueue.songs.push(song);
-          return message.reply(`✅ Added **${song.title}** to the queue! (Position #${serverQueue.songs.length})`);
+          serverQueue.songs.push(songInfo);
+          return message.reply(`✅ Added **${songInfo.title}** to the queue! (Position #${serverQueue.songs.length})`);
         }
       } catch (err) {
         console.error('Play command error:', err);
