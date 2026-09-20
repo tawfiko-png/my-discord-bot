@@ -125,16 +125,26 @@ client.on('messageCreate', (message) => {
 });
 
 // Attempt Discord Login with Explicit Error Logging
+// Attempt Discord Login with Timeout Handling
 const token = (process.env.DISCORD_TOKEN || '').trim();
 
 if (!token) {
   console.error('❌ CRITICAL ERROR: DISCORD_TOKEN variable is EMPTY or MISSING!');
 } else {
-  console.log(' Attempting to log into Discord with provided token...');
-  client.login(token).catch(err => {
-    console.error('❌ DISCORD LOGIN FAILED WITH ERROR:');
-    console.error(err);
-  });
+  console.log(' Attempting to log into Discord...');
+  
+  // Set a 10-second timeout to alert if connection stalls
+  const loginTimeout = setTimeout(() => {
+    console.warn('⚠️ WARNING: Discord login is taking unusually long. Checking network connection...');
+  }, 10000);
+
+  client.login(token)
+    .then(() => clearTimeout(loginTimeout))
+    .catch(err => {
+      clearTimeout(loginTimeout);
+      console.error('❌ DISCORD LOGIN FAILED WITH ERROR:');
+      console.error(err);
+    });
 }
 
 app.listen(PORT, () => {
