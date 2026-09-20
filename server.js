@@ -8,16 +8,16 @@ const {
   createAudioPlayer, 
   createAudioResource, 
   AudioPlayerStatus, 
-  getVoiceConnection 
+  StreamType 
 } = require('@discordjs/voice');
 const play = require('play-dl');
+const ytdl = require('@distube/ytdl-core');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 console.log('--- STARTING SERVER INITIALIZATION ---');
 
-// Initialize Discord Client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -27,18 +27,15 @@ const client = new Client({
   ]
 });
 
-// Storage
 const serverLogs = [];
 const serverModules = {};
-const musicQueues = new Map(); // Store music queue for each guild
+const musicQueues = new Map();
 
-// Express Middleware & Static Files
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use(express.static(path.join(__dirname)));
 
-// REST API Routes
 app.post('/api/login', (req, res) => {
   const user = (req.body.username || '').trim().toUpperCase();
   const pass = (req.body.password || '').trim();
@@ -81,9 +78,7 @@ app.get('/api/server/:id', (req, res) => {
   if (!guild) return res.status(404).json({ error: 'Server not found' });
 
   if (!serverModules[guild.id]) {
-    serverModules[guild.id] = {
-      moderator: true, music: true, automod: false, utility: true, economy: false, welcome: true
-    };
+    serverModules[guild.id] = { moderator: true, music: true, automod: false, utility: true, economy: false, welcome: true };
   }
 
   res.json({
@@ -116,7 +111,6 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
-// Helper Function: Play Next Song in Queue
 async function playNextSong(guildId, messageChannel) {
   const serverQueue = musicQueues.get(guildId);
   if (!serverQueue) return;
@@ -130,13 +124,14 @@ async function playNextSong(guildId, messageChannel) {
   const currentSong = serverQueue.songs[0];
 
   try {
-    const stream = await play.stream(currentSong.url, {
-      discordPlayerCompatibility: true,
-      htmldata: false
+    const stream = ytdl(currentSong.url, {
+      filter: 'audioonly',
+      highWaterMark: 1 << 25,
+      quality: 'highestaudio'
     });
 
-    const resource = createAudioResource(stream.stream, { 
-      inputType: stream.type 
+    const resource = createAudioResource(stream, { 
+      inputType: StreamType.Arbitrary 
     });
 
     serverQueue.player.play(resource);
@@ -151,16 +146,13 @@ async function playNextSong(guildId, messageChannel) {
   }
 }
 
-// Discord Event Listeners
 client.once('ready', () => {
   console.log(`✅ BOT IS ONLINE! Logged in as: ${client.user.tag}`);
-  console.log(`Connected to ${client.guilds.cache.size} servers.`);
 });
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // Log message to dashboard
   serverLogs.push({
     guildId: message.guild.id,
     timestamp: new Date().toLocaleTimeString(),
@@ -168,7 +160,6 @@ client.on('messageCreate', async (message) => {
   });
   if (serverLogs.length > 100) serverLogs.shift();
 
-  // Check if Music Module is Enabled on Dashboard
   if (!serverModules[message.guild.id]) {
     serverModules[message.guild.id] = { moderator: true, music: true, automod: false, utility: true, economy: false, welcome: true };
   }
@@ -177,7 +168,6 @@ client.on('messageCreate', async (message) => {
   const args = message.content.trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
-  // MUSIC COMMANDS
   if (['!play', '!p', '!skip', '!pause', '!resume', '!queue', '!stop'].includes(command)) {
     if (!isMusicEnabled) {
       return message.reply('❌ The **Music** module is disabled for this server via the Web Dashboard.');
@@ -190,18 +180,27 @@ client.on('messageCreate', async (message) => {
 
     let serverQueue = musicQueues.get(message.guild.id);
 
-    // Command: !play <search or URL>
     if (command === '!play' || command === '!p') {
       const query = args.join(' ');
       if (!query) return message.reply('❌ Please provide a song name or YouTube link! Usage: `!play song name`');
 
       try {
-        const ytInfo = await play.search(query, { limit: 1 });
-        if (!ytInfo || ytInfo.length === 0) {
-          return message.reply('❌ No results found on YouTube.');
+        let songUrl = query;
+        let songTitle = query;
+
+        if (!ytdl.validateURL(query)) {
+          const ytInfo = await play.search(query, { limit: 1 });
+          if (!ytInfo || ytInfo.length === 0) {
+            return message.reply('❌ No results found on YouTube.');
+          }
+          songUrl = ytInfo[0].url;
+          songTitle = ytInfo[0].title;
+        } else {
+          const info = await ytdl.getBasicInfo(query);
+          songTitle = info.videoDetails.title;
         }
 
-        const song = { title: ytInfo[0].title, url: ytInfo[0].url };
+        const song = { title: songTitle, url: songUrl };
 
         if (!serverQueue) {
           const queueConstruct = {
@@ -224,7 +223,6 @@ client.on('messageCreate', async (message) => {
 
           queueConstruct.connection = connection;
 
-          // Event when player becomes idle -> play next
           queueConstruct.player.on(AudioPlayerStatus.Idle, () => {
             queueConstruct.songs.shift();
             playNextSong(message.guild.id, message.channel);
@@ -240,70 +238,49 @@ client.on('messageCreate', async (message) => {
         return message.reply('❌ Failed to process music command.');
       }
     }
-    // Command: !skip
     else if (command === '!skip') {
-      if (!serverQueue || serverQueue.songs.length === 0) {
-        return message.reply('❌ There are no songs to skip.');
-      }
+      if (!serverQueue || serverQueue.songs.length === 0) return message.reply('❌ No songs to skip.');
       message.reply('⏭️ Skipped current song.');
-      serverQueue.player.stop(); // Triggers AudioPlayerStatus.Idle to play next
+      serverQueue.player.stop();
     }
-    // Command: !pause
     else if (command === '!pause') {
       if (!serverQueue) return message.reply('❌ Nothing is playing.');
       serverQueue.player.pause();
-      message.reply('⏸️ Paused the music.');
+      message.reply('⏸️ Paused music.');
     }
-    // Command: !resume
     else if (command === '!resume') {
       if (!serverQueue) return message.reply('❌ Nothing is paused.');
       serverQueue.player.unpause();
-      message.reply('▶️ Resumed the music.');
+      message.reply('▶️ Resumed music.');
     }
-    // Command: !queue
     else if (command === '!queue') {
-      if (!serverQueue || serverQueue.songs.length === 0) {
-        return message.reply('🎵 The music queue is currently empty.');
-      }
-      let queueMessage = `🎶 **Current Queue:**\n`;
-      serverQueue.songs.forEach((song, index) => {
-        queueMessage += `${index === 0 ? '▶️ **Now Playing:**' : `**${index}.**`} ${song.title}\n`;
+      if (!serverQueue || serverQueue.songs.length === 0) return message.reply('🎵 Queue is empty.');
+      let msg = `🎶 **Current Queue:**\n`;
+      serverQueue.songs.forEach((s, idx) => {
+        msg += `${idx === 0 ? '▶️ **Now Playing:**' : `**${idx}.**`} ${s.title}\n`;
       });
-      message.reply(queueMessage);
+      message.reply(msg);
     }
-    // Command: !stop
     else if (command === '!stop') {
-      if (!serverQueue) return message.reply('❌ The bot is not playing music.');
+      if (!serverQueue) return message.reply('❌ Bot is not playing music.');
       serverQueue.songs = [];
       if (serverQueue.connection) serverQueue.connection.destroy();
       musicQueues.delete(message.guild.id);
-      message.reply('⏹️ Stopped playback, cleared queue, and left the voice channel.');
+      message.reply('⏹️ Stopped and disconnected.');
     }
   }
 });
 
-// Authentication and Gateway Login
 const token = (process.env.DISCORD_TOKEN || '').replace(/[\r\n\t ]/g, '');
-
 if (!token) {
-  console.error('❌ CRITICAL ERROR: DISCORD_TOKEN is missing or empty!');
+  console.error('❌ DISCORD_TOKEN missing!');
 } else {
-  console.log('--- TESTING DISCORD REST API ACCESS ---');
   const rest = new REST({ version: '10' }).setToken(token);
-
   rest.get(Routes.user('@me'))
-    .then(user => {
-      console.log(`✅ REST API SUCCESS! Authenticated as: ${user.username}#${user.discriminator || '0'}`);
-      console.log('Connecting to Discord WebSocket Gateway...');
-      return client.login(token);
-    })
-    .catch(err => {
-      console.error('❌ DISCORD API / LOGIN ERROR:');
-      console.error(err.message || err);
-    });
+    .then(() => client.login(token))
+    .catch(err => console.error(err));
 }
 
-// Express Listener
 app.listen(PORT, () => {
-  console.log(`🚀 Dashboard listening on port ${PORT}`);
+  console.log(`🚀 Server listening on port ${PORT}`);
 });
