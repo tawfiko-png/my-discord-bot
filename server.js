@@ -7,6 +7,8 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+console.log('--- STARTING SERVER INITIALIZATION ---');
+
 // Initialize Discord Client
 const client = new Client({
   intents: [
@@ -17,19 +19,17 @@ const client = new Client({
   ]
 });
 
-// In-Memory Storage
+// Storage
 const serverLogs = [];
 const serverModules = {}; 
 
-// Middleware & Parsers
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
-
-// Serve static frontend files
 app.use(express.static(path.join(__dirname)));
 
-// Direct Login Endpoint (Case-Insensitive & Whitespace Trimmed)
+// Login Route
 app.post('/api/login', (req, res) => {
   const user = (req.body.username || '').trim().toUpperCase();
   const pass = (req.body.password || '').trim();
@@ -40,7 +40,7 @@ app.post('/api/login', (req, res) => {
   return res.status(401).json({ success: false, message: 'Invalid credentials' });
 });
 
-// Direct Data Endpoints (No Session Lockouts)
+// Bot Info Route
 app.get('/api/bot-info', (req, res) => {
   if (!client.user) return res.status(503).json({ error: 'Bot not ready' });
   const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
@@ -55,7 +55,9 @@ app.get('/api/bot-info', (req, res) => {
   });
 });
 
+// Servers List Route
 app.get('/api/servers', (req, res) => {
+  if (!client.user) return res.json([]);
   const guilds = client.guilds.cache.map(guild => ({
     id: guild.id,
     name: guild.name,
@@ -66,7 +68,9 @@ app.get('/api/servers', (req, res) => {
   res.json(guilds);
 });
 
+// Single Server Route
 app.get('/api/server/:id', (req, res) => {
+  if (!client.user) return res.status(503).json({ error: 'Bot not ready' });
   const guild = client.guilds.cache.get(req.params.id);
   if (!guild) return res.status(404).json({ error: 'Server not found' });
 
@@ -106,8 +110,10 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
+// Discord Event Hooks
 client.once('ready', () => {
-  console.log(`Bot logged in as ${client.user.tag}`);
+  console.log(`✅ BOT IS ONLINE! Logged in as: ${client.user.tag}`);
+  console.log(` Connected to ${client.guilds.cache.size} servers.`);
 });
 
 client.on('messageCreate', (message) => {
@@ -120,8 +126,19 @@ client.on('messageCreate', (message) => {
   if (serverLogs.length > 100) serverLogs.shift();
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// Attempt Discord Login with Explicit Error Logging
+const token = (process.env.DISCORD_TOKEN || '').trim();
+
+if (!token) {
+  console.error('❌ CRITICAL ERROR: DISCORD_TOKEN variable is EMPTY or MISSING!');
+} else {
+  console.log(' Attempting to log into Discord with provided token...');
+  client.login(token).catch(err => {
+    console.error('❌ DISCORD LOGIN FAILED WITH ERROR:');
+    console.error(err);
+  });
+}
 
 app.listen(PORT, () => {
-  console.log(`Dashboard listening on port ${PORT}`);
+  console.log(`🚀 Dashboard listening on port ${PORT}`);
 });
