@@ -110,7 +110,7 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
-// Clean title string for optimal SoundCloud searching
+// Strip clutter words for clean searching
 function cleanTitle(title) {
   return title
     .replace(/[\(\[\{].*?(official\vert{}music\vert{}video\vert{}audio\vert{}lyric\vert{}hd\vert{}4k).*?[\)\]\}]/gi, '')
@@ -118,7 +118,7 @@ function cleanTitle(title) {
     .trim();
 }
 
-// Extract Video ID using regex
+// Extract Video ID from any YouTube URL
 function extractYouTubeVideoId(url) {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
   const match = url.match(regExp);
@@ -142,6 +142,23 @@ function fetchYouTubeTitleViaOEmbed(videoId) {
       });
     }).on('error', () => resolve(null));
   });
+}
+
+// Perform SoundCloud lookup with error handling
+async function searchSoundCloudTrack(query) {
+  try {
+    const cleaned = cleanTitle(query);
+    let results = await play.search(cleaned, { source: { soundcloud: 'tracks' }, limit: 1 });
+    if ((!results || results.length === 0) && cleaned !== query) {
+      results = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+    }
+    if (results && results.length > 0) {
+      return { url: results[0].url, title: results[0].name };
+    }
+  } catch (err) {
+    console.error('SoundCloud Search Error:', err.message);
+  }
+  return null;
 }
 
 async function playNextSong(guildId, messageChannel) {
@@ -219,45 +236,36 @@ client.on('messageCreate', async (message) => {
       if (!rawQuery) return message.reply('❌ Please provide a song name or link! Usage: `!play song name`');
 
       try {
-        let trackUrl = '';
-        let trackTitle = '';
+        let foundTrack = null;
         let searchQuery = rawQuery;
 
-        // Step 1: Check if input is YouTube URL
+        // Step 1: Check if input is a YouTube URL
         const videoId = extractYouTubeVideoId(rawQuery);
         if (videoId) {
           const ytTitle = await fetchYouTubeTitleViaOEmbed(videoId);
           if (ytTitle) searchQuery = ytTitle;
         }
 
-        // Step 2: Try Searching SoundCloud directly first
-        let scResults = await play.search(cleanTitle(searchQuery), { source: { soundcloud: 'tracks' }, limit: 1 });
+        // Step 2: Perform track search on SoundCloud
+        foundTrack = await searchSoundCloudTrack(searchQuery);
 
-        if (!scResults || scResults.length === 0) {
-          scResults = await play.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
-        }
-
-        if (scResults && scResults.length > 0) {
-          trackUrl = scResults[0].url;
-          trackTitle = scResults[0].name;
-        } else {
-          // Fallback: search YouTube for track name to extract accurate title then search SC
-          const ytSearch = await play.search(searchQuery, { limit: 1 });
-          if (ytSearch && ytSearch.length > 0) {
-            const refinedTitle = cleanTitle(ytSearch[0].title);
-            scResults = await play.search(refinedTitle, { source: { soundcloud: 'tracks' }, limit: 1 });
-            if (scResults && scResults.length > 0) {
-              trackUrl = scResults[0].url;
-              trackTitle = scResults[0].name;
+        // Step 3: If plain search fails, try YouTube search fallback to refine the title
+        if (!foundTrack && !videoId) {
+          try {
+            const ytResults = await play.search(searchQuery, { limit: 1 });
+            if (ytResults && ytResults.length > 0) {
+              foundTrack = await searchSoundCloudTrack(ytResults[0].title);
             }
+          } catch (ytErr) {
+            console.error('YouTube Fallback Error:', ytErr.message);
           }
         }
 
-        if (!trackUrl) {
-          return message.reply(`❌ No track found on SoundCloud for: **${searchQuery}**`);
+        if (!foundTrack) {
+          return message.reply(`❌ No track found for: **${searchQuery}**`);
         }
 
-        const song = { title: trackTitle, url: trackUrl };
+        const song = { title: foundTrack.title, url: foundTrack.url };
 
         if (!serverQueue) {
           const queueConstruct = {
