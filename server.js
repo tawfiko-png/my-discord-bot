@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const session = require('express-session');
 const cors = require('cors');
 const path = require('path');
 const { Client, GatewayIntentBits } = require('discord.js');
@@ -18,43 +17,32 @@ const client = new Client({
   ]
 });
 
-// In-Memory Storage for Logs & Server Module Settings
+// In-Memory Storage
 const serverLogs = [];
 const serverModules = {}; 
 
+// Middleware & Parsers
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors());
-app.use(session({
-  secret: 'iscream_secret_key_2026',
-  resave: false,
-  saveUninitialized: true
-}));
 
 // Serve static frontend files
 app.use(express.static(path.join(__dirname)));
 
-// API: Login Endpoint
+// Direct Login Endpoint (Case-Insensitive & Whitespace Trimmed)
 app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  if (username === 'ADMIN' && password === 'iscream@@2026') {
-    req.session.authenticated = true;
+  const user = (req.body.username || '').trim().toUpperCase();
+  const pass = (req.body.password || '').trim();
+
+  if (user === 'ADMIN' && pass === 'iscream@@2026') {
     return res.json({ success: true });
   }
   return res.status(401).json({ success: false, message: 'Invalid credentials' });
 });
 
-// Middleware to protect routes
-function requireAuth(req, res, next) {
-  if (req.session && req.session.authenticated) {
-    return next();
-  }
-  return res.status(401).json({ error: 'Unauthorized' });
-}
-
-// API: Get Real Bot & Global Stats
-app.get('/api/bot-info', requireAuth, (req, res) => {
+// Direct Data Endpoints (No Session Lockouts)
+app.get('/api/bot-info', (req, res) => {
   if (!client.user) return res.status(503).json({ error: 'Bot not ready' });
-
   const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
   
   res.json({
@@ -67,8 +55,7 @@ app.get('/api/bot-info', requireAuth, (req, res) => {
   });
 });
 
-// API: Get Real Servers (Guilds) List
-app.get('/api/servers', requireAuth, (req, res) => {
+app.get('/api/servers', (req, res) => {
   const guilds = client.guilds.cache.map(guild => ({
     id: guild.id,
     name: guild.name,
@@ -79,20 +66,13 @@ app.get('/api/servers', requireAuth, (req, res) => {
   res.json(guilds);
 });
 
-// API: Get Specific Server Details
-app.get('/api/server/:id', requireAuth, async (req, res) => {
+app.get('/api/server/:id', (req, res) => {
   const guild = client.guilds.cache.get(req.params.id);
   if (!guild) return res.status(404).json({ error: 'Server not found' });
 
-  // Initialize modules for server if not present
   if (!serverModules[guild.id]) {
     serverModules[guild.id] = {
-      moderator: true,
-      music: true,
-      automod: false,
-      utility: true,
-      economy: false,
-      welcome: true
+      moderator: true, music: true, automod: false, utility: true, economy: false, welcome: true
     };
   }
 
@@ -108,8 +88,7 @@ app.get('/api/server/:id', requireAuth, async (req, res) => {
   });
 });
 
-// API: Update Server Module Toggle
-app.post('/api/server/:id/module', requireAuth, (req, res) => {
+app.post('/api/server/:id/module', (req, res) => {
   const { moduleName, enabled } = req.body;
   const guildId = req.params.id;
 
@@ -118,8 +97,6 @@ app.post('/api/server/:id/module', requireAuth, (req, res) => {
   }
 
   serverModules[guildId][moduleName] = enabled;
-  
-  // Log event
   serverLogs.push({
     guildId,
     timestamp: new Date().toLocaleTimeString(),
@@ -129,12 +106,10 @@ app.post('/api/server/:id/module', requireAuth, (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
-// Discord Bot Ready Event
 client.once('ready', () => {
   console.log(`Bot logged in as ${client.user.tag}`);
 });
 
-// Track Message Logs Real-Time
 client.on('messageCreate', (message) => {
   if (message.author.bot || !message.guild) return;
   serverLogs.push({
@@ -142,13 +117,11 @@ client.on('messageCreate', (message) => {
     timestamp: new Date().toLocaleTimeString(),
     text: `[${message.channel.name}] ${message.author.tag}: ${message.content}`
   });
-  // Keep only the last 100 log entries
   if (serverLogs.length > 100) serverLogs.shift();
 });
 
-// Log into Discord
 client.login(process.env.DISCORD_TOKEN);
 
 app.listen(PORT, () => {
-  console.log(`Dashboard Server listening on http://localhost:${PORT}`);
+  console.log(`Dashboard listening on port ${PORT}`);
 });
