@@ -127,7 +127,7 @@ async function playNextSong(guildId, messageChannel) {
     const resource = createAudioResource(stream.stream, { inputType: stream.type });
 
     serverQueue.player.play(resource);
-    serverQueue.connection.subscribe(serverQueue.player);
+    serverQueue.connection.subscribe(serverQueue.connection ? serverQueue.player : null);
 
     messageChannel.send(`🎶 Now playing: **${currentSong.title}**`);
   } catch (error) {
@@ -141,7 +141,6 @@ async function playNextSong(guildId, messageChannel) {
 client.on('clientReady', async () => {
   console.log(`✅ BOT IS ONLINE! Logged in as: ${client.user.tag}`);
 
-  // Auto-generate SoundCloud Client ID to avoid missing client_id error
   try {
     const scClientID = await play.getFreeClientID();
     await play.setToken({ soundcloud: { client_id: scClientID } });
@@ -182,21 +181,46 @@ client.on('messageCreate', async (message) => {
     let serverQueue = musicQueues.get(message.guild.id);
 
     if (command === '!play' || command === '!p') {
-      const query = args.join(' ');
-      if (!query) return message.reply('❌ Please provide a song name! Usage: `!play song name`');
+      let query = args.join(' ');
+      if (!query) return message.reply('❌ Please provide a song name or link! Usage: `!play song name`');
 
       try {
         let trackUrl = '';
         let trackTitle = '';
 
-        // Search SoundCloud
-        const scResults = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+        const validatedType = await play.validate(query);
 
-        if (scResults && scResults.length > 0) {
-          trackUrl = scResults[0].url;
-          trackTitle = scResults[0].name;
+        if (validatedType === 'so_track') {
+          // Direct SoundCloud link
+          const scInfo = await play.soundcloud(query);
+          trackUrl = scInfo.url;
+          trackTitle = scInfo.name;
+        } else if (validatedType === 'yt_video') {
+          // YouTube link: fetch video title, then search SoundCloud for audio stream
+          try {
+            const ytInfo = await play.video_basic_info(query);
+            query = ytInfo.video_details.title;
+          } catch (e) {
+            // Fallback: clean URL to keyword query if info fetch is blocked
+            query = query.replace(/https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/watch\?v=/g, '');
+          }
+
+          const scResults = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+          if (scResults && scResults.length > 0) {
+            trackUrl = scResults[0].url;
+            trackTitle = scResults[0].name;
+          }
         } else {
-          return message.reply('❌ No results found on SoundCloud.');
+          // Plain text search on SoundCloud
+          const scResults = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+          if (scResults && scResults.length > 0) {
+            trackUrl = scResults[0].url;
+            trackTitle = scResults[0].name;
+          }
+        }
+
+        if (!trackUrl) {
+          return message.reply('❌ No track found on SoundCloud for this request.');
         }
 
         const song = { title: trackTitle, url: trackUrl };
