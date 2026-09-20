@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discord Bot Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background-color: #1e1f22; color: #f2f3f5; padding: 20px; }
+    .card { background-color: #2b2d31; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    h2 { margin-top: 0; color: #5865f2; }
+    label { display: block; margin: 10px 0 5px; }
+    input, select, textarea, button { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: none; box-sizing: border-box; }
+    input, select, textarea { background-color: #383a40; color: #ffffff; }
+    button { background-color: #5865f2; color: white; font-weight: bold; cursor: pointer; }
+    button:hover { background-color: #4752c4; }
+    .status-badge { display: inline-block; padding: 5px 10px; border-radius: 4px; font-weight: bold; background-color: #f23f43; }
+    .status-online { background-color: #23a55a; }
+  </style>
+</head>
+<body>
+  <h1>Discord Bot Dashboard</h1>
+  
+  <div class="card">
+    <h2>Bot Status</h2>
+    <p>Status: <span id="botStatus" class="status-badge">Checking...</span></p>
+    <p>Username: <strong id="botUsername">--</strong></p>
+    <p>Servers: <strong id="botGuilds">--</strong> | Members: <strong id="botMembers">--</strong></p>
+  </div>
+
+  <div class="card">
+    <h2>Update Presence</h2>
+    <label>Status</label>
+    <select id="statusSelect">
+      <option value="online">Online</option>
+      <option value="idle">Idle</option>
+      <option value="dnd">Do Not Disturb</option>
+      <option value="invisible">Invisible</option>
+    </select>
+    
+    <label>Activity Type</label>
+    <select id="activityType">
+      <option value="PLAYING">Playing</option>
+      <option value="STREAMING">Streaming</option>
+      <option value="LISTENING">Listening to</option>
+      <option value="WATCHING">Watching</option>
+      <option value="COMPETING">Competing in</option>
+    </select>
+
+    <label>Activity Text</label>
+    <input type="text" id="activityText" placeholder="e.g. Managing Server">
+
+    <button onclick="updatePresence()">Update Status</button>
+  </div>
+
+  <div class="card">
+    <h2>Send Announcement Embed</h2>
+    <label>Channel ID</label>
+    <input type="text" id="channelId" placeholder="Paste Channel ID here">
+    
+    <label>Title</label>
+    <input type="text" id="announceTitle" placeholder="Announcement Title">
+
+    <label>Message</label>
+    <textarea id="announceDesc" rows="4" placeholder="Announcement content..."></textarea>
+
+    <button onclick="sendAnnouncement()">Send Announcement</button>
+  </div>
+
+  <script>
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        const badge = document.getElementById('botStatus');
+        if (data.online) {
+          badge.textContent = 'ONLINE';
+          badge.className = 'status-badge status-online';
+        } else {
+          badge.textContent = 'OFFLINE';
+          badge.className = 'status-badge';
+        }
+        document.getElementById('botUsername').textContent = data.username;
+        document.getElementById('botGuilds').textContent = data.guildsCount;
+        document.getElementById('botMembers').textContent = data.membersCount;
+      } catch (e) {
+        document.getElementById('botStatus').textContent = 'DISCONNECTED';
+      }
+    }
+
+    async function updatePresence() {
+      const status = document.getElementById('statusSelect').value;
+      const activityType = document.getElementById('activityType').value;
+      const activityText = document.getElementById('activityText').value;
+
+      await fetch('/api/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, activityType, activityText })
+      });
+      alert('Status updated!');
+      loadStats();
+    }
+
+    async function sendAnnouncement() {
+      const channelId = document.getElementById('channelId').value;
+      const title = document.getElementById('announceTitle').value;
+      const description = document.getElementById('announceDesc').value;
+
+      const res = await fetch('/api/announce', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId, title, description })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Announcement sent!');
+      } else {
+        alert('Error: ' + data.error);
+      }
+    }
+
+    setInterval(loadStats, 5000);
+    loadStats();
+  </script>
+</body>
+</html>
