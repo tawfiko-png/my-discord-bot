@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const https = require('https');
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const { 
   joinVoiceChannel, 
@@ -10,7 +11,6 @@ const {
   AudioPlayerStatus 
 } = require('@discordjs/voice');
 const play = require('play-dl');
-const YouTube = require('youtube-sr').default;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -110,13 +110,38 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
-// Helper function to clean search terms for SoundCloud
-function cleanSearchQuery(term) {
-  return term
-    .replace(/https?:\/\/\S+/g, '') // remove URLs
-    .replace(/[\(\[\{].*?(official\vert{}music\vert{}video\vert{}audio\vert{}lyric\vert{}hd\vert{}4k).*?[\)\]\}]/gi, '') // remove (Official Music Video) etc.
+// Clean title string for optimal SoundCloud searching
+function cleanTitle(title) {
+  return title
+    .replace(/[\(\[\{].*?(official\vert{}music\vert{}video\vert{}audio\vert{}lyric\vert{}hd\vert{}4k).*?[\)\]\}]/gi, '')
     .replace(/official music video|official video|official audio|lyric video/gi, '')
     .trim();
+}
+
+// Extract Video ID using regex
+function extractYouTubeVideoId(url) {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
+// Fetch YouTube title via unblocked public oEmbed API
+function fetchYouTubeTitleViaOEmbed(videoId) {
+  return new Promise((resolve) => {
+    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    https.get(oembedUrl, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json.title || null);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null));
+  });
 }
 
 async function playNextSong(guildId, messageChannel) {
@@ -198,26 +223,22 @@ client.on('messageCreate', async (message) => {
         let trackTitle = '';
         let searchQuery = rawQuery;
 
-        // Step 1: If YouTube link, extract title using youtube-sr
-        if (YouTube.isPlaylist(rawQuery) || rawQuery.includes('youtube.com') || rawQuery.includes('youtu.be')) {
-          try {
-            const video = await YouTube.getVideo(rawQuery);
-            if (video && video.title) {
-              searchQuery = video.title;
-            }
-          } catch (e) {
-            console.log('YouTube URL lookup failed, falling back to raw query.');
+        // Step 1: Check if input is a YouTube URL
+        const videoId = extractYouTubeVideoId(rawQuery);
+        if (videoId) {
+          const ytTitle = await fetchYouTubeTitleViaOEmbed(videoId);
+          if (ytTitle) {
+            searchQuery = ytTitle;
           }
         }
 
-        // Step 2: Clean query string
-        const cleanedQuery = cleanSearchQuery(searchQuery);
-        console.log(`Searching SoundCloud for cleaned query: "${cleanedQuery}"`);
+        // Step 2: Clean the search string for SoundCloud
+        const cleanedQuery = cleanTitle(searchQuery);
 
-        // Step 3: Search SoundCloud with cleaned query
+        // Step 3: Search SoundCloud
         let scResults = await play.search(cleanedQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
 
-        // Fallback search with uncleaned query if cleaned search yields no results
+        // Fallback to raw query if cleaned query yields 0 results
         if ((!scResults || scResults.length === 0) && cleanedQuery !== searchQuery) {
           scResults = await play.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
         }
