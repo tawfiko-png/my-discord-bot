@@ -138,8 +138,17 @@ async function playNextSong(guildId, messageChannel) {
   }
 }
 
-client.on('clientReady', () => {
+client.on('clientReady', async () => {
   console.log(`✅ BOT IS ONLINE! Logged in as: ${client.user.tag}`);
+
+  // Auto-generate SoundCloud Client ID to avoid missing client_id error
+  try {
+    const scClientID = await play.getFreeClientID();
+    await play.setToken({ soundcloud: { client_id: scClientID } });
+    console.log('✅ SoundCloud Client ID successfully generated.');
+  } catch (e) {
+    console.error('⚠️ Could not initialize SoundCloud Client ID:', e.message);
+  }
 });
 
 client.on('messageCreate', async (message) => {
@@ -180,7 +189,7 @@ client.on('messageCreate', async (message) => {
         let trackUrl = '';
         let trackTitle = '';
 
-        // Search SoundCloud directly to bypass YouTube datacenter blocks
+        // Search SoundCloud
         const scResults = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
 
         if (scResults && scResults.length > 0) {
