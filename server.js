@@ -10,6 +10,7 @@ const {
   AudioPlayerStatus 
 } = require('@discordjs/voice');
 const play = require('play-dl');
+const YouTube = require('youtube-sr').default;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -109,7 +110,15 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
-// Play Next Song Routine
+// Helper function to clean search terms for SoundCloud
+function cleanSearchQuery(term) {
+  return term
+    .replace(/https?:\/\/\S+/g, '') // remove URLs
+    .replace(/[\(\[\{].*?(official\vert{}music\vert{}video\vert{}audio\vert{}lyric\vert{}hd\vert{}4k).*?[\)\]\}]/gi, '') // remove (Official Music Video) etc.
+    .replace(/official music video|official video|official audio|lyric video/gi, '')
+    .trim();
+}
+
 async function playNextSong(guildId, messageChannel) {
   const serverQueue = musicQueues.get(guildId);
   if (!serverQueue) return;
@@ -181,46 +190,43 @@ client.on('messageCreate', async (message) => {
     let serverQueue = musicQueues.get(message.guild.id);
 
     if (command === '!play' || command === '!p') {
-      let query = args.join(' ');
-      if (!query) return message.reply('❌ Please provide a song name or link! Usage: `!play song name`');
+      let rawQuery = args.join(' ');
+      if (!rawQuery) return message.reply('❌ Please provide a song name or link! Usage: `!play song name`');
 
       try {
         let trackUrl = '';
         let trackTitle = '';
+        let searchQuery = rawQuery;
 
-        const validatedType = await play.validate(query);
-
-        if (validatedType === 'so_track') {
-          // Direct SoundCloud link
-          const scInfo = await play.soundcloud(query);
-          trackUrl = scInfo.url;
-          trackTitle = scInfo.name;
-        } else if (validatedType === 'yt_video') {
-          // YouTube link: fetch video title, then search SoundCloud for audio stream
+        // Step 1: If YouTube link, extract title using youtube-sr
+        if (YouTube.isPlaylist(rawQuery) || rawQuery.includes('youtube.com') || rawQuery.includes('youtu.be')) {
           try {
-            const ytInfo = await play.video_basic_info(query);
-            query = ytInfo.video_details.title;
+            const video = await YouTube.getVideo(rawQuery);
+            if (video && video.title) {
+              searchQuery = video.title;
+            }
           } catch (e) {
-            // Fallback: clean URL to keyword query if info fetch is blocked
-            query = query.replace(/https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/watch\?v=/g, '');
-          }
-
-          const scResults = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
-          if (scResults && scResults.length > 0) {
-            trackUrl = scResults[0].url;
-            trackTitle = scResults[0].name;
-          }
-        } else {
-          // Plain text search on SoundCloud
-          const scResults = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
-          if (scResults && scResults.length > 0) {
-            trackUrl = scResults[0].url;
-            trackTitle = scResults[0].name;
+            console.log('YouTube URL lookup failed, falling back to raw query.');
           }
         }
 
-        if (!trackUrl) {
-          return message.reply('❌ No track found on SoundCloud for this request.');
+        // Step 2: Clean query string
+        const cleanedQuery = cleanSearchQuery(searchQuery);
+        console.log(`Searching SoundCloud for cleaned query: "${cleanedQuery}"`);
+
+        // Step 3: Search SoundCloud with cleaned query
+        let scResults = await play.search(cleanedQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
+
+        // Fallback search with uncleaned query if cleaned search yields no results
+        if ((!scResults || scResults.length === 0) && cleanedQuery !== searchQuery) {
+          scResults = await play.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
+        }
+
+        if (scResults && scResults.length > 0) {
+          trackUrl = scResults[0].url;
+          trackTitle = scResults[0].name;
+        } else {
+          return message.reply(`❌ No track found on SoundCloud for: **${cleanedQuery || searchQuery}**`);
         }
 
         const song = { title: trackTitle, url: trackUrl };
