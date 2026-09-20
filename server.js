@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,15 +19,15 @@ const client = new Client({
 
 // Storage
 const serverLogs = [];
-const serverModules = {}; 
+const serverModules = {};
 
-// Middleware
+// Middleware & Static Files
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use(express.static(path.join(__dirname)));
 
-// Login Route
+// API Routes
 app.post('/api/login', (req, res) => {
   const user = (req.body.username || '').trim().toUpperCase();
   const pass = (req.body.password || '').trim();
@@ -38,7 +38,6 @@ app.post('/api/login', (req, res) => {
   return res.status(401).json({ success: false, message: 'Invalid credentials' });
 });
 
-// Bot Info Route
 app.get('/api/bot-info', (req, res) => {
   if (!client.user) return res.status(503).json({ error: 'Bot not ready' });
   const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
@@ -53,7 +52,6 @@ app.get('/api/bot-info', (req, res) => {
   });
 });
 
-// Servers List Route
 app.get('/api/servers', (req, res) => {
   if (!client.user) return res.json([]);
   const guilds = client.guilds.cache.map(guild => ({
@@ -66,7 +64,6 @@ app.get('/api/servers', (req, res) => {
   res.json(guilds);
 });
 
-// Single Server Route
 app.get('/api/server/:id', (req, res) => {
   if (!client.user) return res.status(503).json({ error: 'Bot not ready' });
   const guild = client.guilds.cache.get(req.params.id);
@@ -108,10 +105,10 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
-// Discord Event Hooks
+// Discord Event Listeners
 client.once('ready', () => {
   console.log(`✅ BOT IS ONLINE! Logged in as: ${client.user.tag}`);
-  console.log(` Connected to ${client.guilds.cache.size} servers.`);
+  console.log(`Connected to ${client.guilds.cache.size} servers.`);
 });
 
 client.on('messageCreate', (message) => {
@@ -124,24 +121,19 @@ client.on('messageCreate', (message) => {
   if (serverLogs.length > 100) serverLogs.shift();
 });
 
-// Attempt Discord Login with Explicit Error Logging
-// Attempt Discord Login with Timeout Handling
-const { REST, Routes } = require('discord.js');
-
+// Authentication and Gateway Login
 const token = (process.env.DISCORD_TOKEN || '').trim();
 
 if (!token) {
   console.error('❌ CRITICAL ERROR: DISCORD_TOKEN is missing or empty!');
 } else {
   console.log('--- TESTING DISCORD REST API ACCESS ---');
-  
   const rest = new REST({ version: '10' }).setToken(token);
 
-  // Test token against Discord REST API first
   rest.get(Routes.user('@me'))
     .then(user => {
-      console.log(`✅ REST API SUCCESS! Authenticated as: ${user.username}#${user.discriminator}`);
-      console.log('Connecting to WebSocket Gateway...');
+      console.log(`✅ REST API SUCCESS! Authenticated as: ${user.username}#${user.discriminator || '0'}`);
+      console.log('Connecting to Discord WebSocket Gateway...');
       return client.login(token);
     })
     .catch(err => {
@@ -150,10 +142,7 @@ if (!token) {
     });
 }
 
-app.listen(PORT, () => {
-  console.log(`🚀 Dashboard listening on port ${PORT}`);
-});
-
+// Single Express Listener
 app.listen(PORT, () => {
   console.log(`🚀 Dashboard listening on port ${PORT}`);
 });
