@@ -3,59 +3,53 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MEGABOT Panel</title>
-  <!-- Chart.js CDN for the Server Overview graph -->
+  <title>𝙸𝚂𝙲𝚁𝙴𝙰𝙼 𝙱𝙾𝚃 Panel</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     body { background-color: #121318; color: #a3a6b4; display: flex; height: 100vh; overflow: hidden; }
 
-    /* Left Sidebar */
-    .sidebar { width: 220px; background-color: #1a1b23; border-right: 1px solid #282a36; display: flex; flex-direction: column; padding: 20px 10px; }
+    /* Login Screen Overlay */
+    #loginOverlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #0d0e12; display: flex; align-items: center; justify-content: center; z-index: 9999; }
+    .login-card { background-color: #1a1b23; padding: 40px; border-radius: 12px; border: 1px solid #282a36; width: 360px; text-align: center; }
+    .login-card h2 { color: #fff; margin-bottom: 20px; font-size: 22px; }
+    .login-input { width: 100%; padding: 12px; margin-bottom: 15px; background-color: #121318; border: 1px solid #282a36; border-radius: 8px; color: #fff; font-size: 14px; outline: none; }
+    .login-btn { width: 100%; padding: 12px; background-color: #5865f2; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    .login-btn:hover { background-color: #4752c4; }
+    .error-msg { color: #da373c; font-size: 12px; margin-bottom: 10px; display: none; }
+
+    /* Dashboard Layout */
+    .sidebar { width: 240px; background-color: #1a1b23; border-right: 1px solid #282a36; display: flex; flex-direction: column; padding: 20px 10px; }
     .brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: bold; font-size: 18px; margin-bottom: 30px; padding-left: 10px; }
-    .brand-icon { width: 32px; height: 32px; background-color: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .brand-img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
     .nav-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; color: #8e92a2; text-decoration: none; border-radius: 8px; font-size: 14px; margin-bottom: 4px; cursor: pointer; }
     .nav-item:hover, .nav-item.active { background-color: #262835; color: #fff; }
-    .badge { background-color: #23a55a; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
 
-    /* Main Container */
-    .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow-y: auto; position: relative; }
-
-    /* Top Navigation Bar */
+    .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
     .topbar { background-color: #1a1b23; border-bottom: 1px solid #282a36; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
     .topbar-stats { display: flex; align-items: center; gap: 20px; font-size: 14px; }
     .status-online { background-color: #1a382b; color: #23a55a; padding: 4px 10px; border-radius: 20px; font-weight: bold; display: flex; align-items: center; gap: 6px; font-size: 12px; }
     .status-dot { width: 8px; height: 8px; background-color: #23a55a; border-radius: 50%; }
     .stat-val { color: #fff; font-weight: 600; }
-    .user-profile { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 14px; }
-    .avatar { width: 28px; height: 28px; background-color: #5865f2; border-radius: 50%; }
+    .user-profile { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 14px; font-weight: 600; }
+    .user-badge { background-color: #5865f2; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
 
-    /* Dashboard Grid Content */
     .content { padding: 25px; display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
     .card { background-color: #1a1b23; border-radius: 12px; padding: 20px; border: 1px solid #282a36; }
-    .card-title { color: #fff; font-size: 16px; font-weight: 600; margin-bottom: 15px; display: flex; justify-content: space-between; }
-    .subtext { font-size: 12px; color: #5865f2; }
+    .card-title { color: #fff; font-size: 16px; font-weight: 600; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
 
-    /* Server List Component */
+    /* Servers List UI */
+    .server-list-box { max-height: 280px; overflow-y: auto; }
     .server-item { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #262835; }
     .server-info { display: flex; align-items: center; gap: 12px; }
-    .server-icon { width: 36px; height: 36px; border-radius: 10px; background-color: #383a40; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 14px; }
+    .server-icon { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; }
     .server-name { color: #fff; font-size: 14px; font-weight: 500; }
     .server-meta { font-size: 12px; color: #72767d; }
-    .btn-manage { background-color: #5865f2; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500; }
+    .btn-manage { background-color: #5865f2; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; }
     .btn-manage:hover { background-color: #4752c4; }
 
-    /* Control Center Grid */
+    /* Modules Toggles */
     .control-center-grid { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px; }
-    .section-heading { color: #fff; font-size: 20px; font-weight: 700; grid-column: span 2; margin-top: 10px; }
-
-    /* Bot Action Buttons */
-    .btn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
-    .btn-action { background-color: #4752c4; color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; text-transform: uppercase; }
-    .btn-danger { background-color: #da373c; }
-    .btn-action:hover { opacity: 0.9; }
-
-    /* Module Toggles */
     .modules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .module-item { display: flex; justify-content: space-between; align-items: center; background-color: #121318; padding: 10px 15px; border-radius: 8px; }
     .module-name { color: #fff; font-size: 14px; }
@@ -66,191 +60,235 @@
     input:checked + .slider { background-color: #23a55a; }
     input:checked + .slider:before { transform: translateX(22px); }
 
-    /* Live Terminal Console Overlay */
-    .terminal-box { position: fixed; bottom: 20px; right: 20px; width: 550px; background-color: #0d0e12; border: 1px solid #282a36; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
-    .terminal-header { background-color: #1a1b23; padding: 10px 15px; color: #fff; font-size: 12px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #282a36; }
-    .terminal-body { padding: 15px; font-family: monospace; font-size: 12px; color: #23a55a; height: 180px; overflow-y: auto; }
+    /* Terminal Console */
+    .terminal-box { position: fixed; bottom: 20px; right: 20px; width: 500px; background-color: #0d0e12; border: 1px solid #282a36; border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .terminal-header { background-color: #1a1b23; padding: 10px 15px; color: #fff; font-size: 12px; font-weight: bold; border-bottom: 1px solid #282a36; }
+    .terminal-body { padding: 15px; font-family: monospace; font-size: 12px; color: #23a55a; height: 150px; overflow-y: auto; }
     .log-line { margin-bottom: 6px; color: #a3a6b4; }
-    .log-cmd { color: #5865f2; }
   </style>
 </head>
 <body>
 
-  <!-- Left Sidebar -->
-  <div class="sidebar">
-    <div class="brand">
-      <div class="brand-icon">🤖</div>
-      MEGABOT
+  <!-- Login Modal -->
+  <div id="loginOverlay">
+    <div class="login-card">
+      <h2>𝙸𝚂𝙲𝚁𝙴𝙰𝙼 𝙱𝙾𝚃 Admin</h2>
+      <div id="loginError" class="error-msg">Invalid Username or Password</div>
+      <input type="text" id="username" class="login-input" placeholder="Username">
+      <input type="password" id="password" class="login-input" placeholder="Password">
+      <button class="login-btn" onclick="attemptLogin()">LOGIN</button>
     </div>
-    <a class="nav-item active"><span>🏠 Dashboard</span> <span class="badge">Active</span></a>
-    <a class="nav-item"><span>storage Servers</span></a>
-    <a class="nav-item"><span>🧩 Modules</span></a>
-    <a class="nav-item"><span>📄 Logs</span></a>
-    <a class="nav-item"><span>👥 Users</span></a>
-    <a class="nav-item"><span>⚙️ Settings</span></a>
-    <a class="nav-item"><span>❓ Support</span></a>
   </div>
 
-  <!-- Main Area -->
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="brand">
+      <img id="botAvatar" class="brand-img" src="https://cdn.discordapp.com/embed/avatars/0.png" alt="Bot Avatar">
+      <span id="botName">𝙸𝚂𝙲𝚁𝙴𝙰𝙼 𝙱𝙾𝚃</span>
+    </div>
+    <a class="nav-item active"><span>🏠 Dashboard</span></a>
+    <a class="nav-item"><span>⚙️ Server Settings</span></a>
+  </div>
+
+  <!-- Main Content -->
   <div class="main-wrapper">
-    <!-- Top Stats Bar -->
     <div class="topbar">
       <div class="topbar-stats">
         <div class="status-online"><div class="status-dot"></div> ONLINE</div>
-        <div>Latency: <span class="stat-val" id="latency">48ms</span></div>
-        <div>Servers: <span class="stat-val" id="serversCount">1,489</span></div>
-        <div>Users: <span class="stat-val" id="usersCount">685K</span></div>
+        <div>Ping: <span class="stat-val" id="botPing">0ms</span></div>
+        <div>Servers: <span class="stat-val" id="serversCount">0</span></div>
+        <div>Total Members: <span class="stat-val" id="totalMembers">0</span></div>
       </div>
       <div class="user-profile">
-        <div class="avatar"></div>
-        <span>AdminUser</span> ⚙️
+        <span>ADMIN</span>
+        <span class="user-badge">Owner</span>
       </div>
     </div>
 
-    <!-- Main Grid Content -->
     <div class="content">
-      <!-- Chart Card -->
+      <!-- Active Managed Server Overview -->
       <div class="card">
         <div class="card-title">
-          Server Overview
-          <span class="subtext">• Active Servers & Users</span>
+          <span id="activeServerTitle">Selected Server: None</span>
         </div>
         <canvas id="overviewChart" height="110"></canvas>
       </div>
 
-      <!-- Server List Card -->
+      <!-- Real Servers List -->
       <div class="card">
-        <div class="card-title">SERVER LIST</div>
-        <div class="server-item">
-          <div class="server-info">
-            <div class="server-icon" style="background-color: #5865f2;">GN</div>
-            <div>
-              <div class="server-name">Gaming Nexus</div>
-              <div class="server-meta">👥 258 members</div>
-            </div>
-          </div>
-          <button class="btn-manage">Manage</button>
-        </div>
-
-        <div class="server-item">
-          <div class="server-info">
-            <div class="server-icon" style="background-color: #eb459e;">AC</div>
-            <div>
-              <div class="server-name">Anime Cafe</div>
-              <div class="server-meta">👥 13 members</div>
-            </div>
-          </div>
-          <button class="btn-manage">Manage</button>
-        </div>
-
-        <div class="server-item">
-          <div class="server-info">
-            <div class="server-icon" style="background-color: #57f287;">DH</div>
-            <div>
-              <div class="server-name">Dev Hub</div>
-              <div class="server-meta">👥 72 members</div>
-            </div>
-          </div>
-          <button class="btn-manage">Manage</button>
+        <div class="card-title">SERVERS LIST</div>
+        <div class="server-list-box" id="serversListContainer">
+          <!-- Populated dynamically -->
         </div>
       </div>
 
-      <!-- Control Center Section -->
-      <div class="section-heading">Control Center</div>
-
+      <!-- Module Controls -->
       <div class="control-center-grid">
-        <!-- Bot Actions -->
         <div class="card">
-          <div class="card-title">BOT ACTIONS</div>
-          <div class="btn-grid">
-            <button class="btn-action" onclick="logAction('Start Bot')">[START BOT]</button>
-            <button class="btn-action" onclick="logAction('Restart')">[RESTART]</button>
-            <button class="btn-action btn-danger" onclick="logAction('Stop')">[STOP]</button>
-            <button class="btn-action" onclick="logAction('Reload Mods')">[RELOAD MODS]</button>
-            <button class="btn-action" onclick="logAction('Send Broadcast')">[SEND BROADCAST]</button>
-          </div>
-        </div>
-
-        <!-- Modules Control Toggles -->
-        <div class="card">
-          <div class="card-title">MODULES CONTROL</div>
-          <div class="modules-grid">
+          <div class="card-title">SERVER MODULES CONTROL</div>
+          <div class="modules-grid" id="modulesContainer">
             <div class="module-item">
               <span class="module-name">Moderator</span>
-              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" onchange="toggleModule('moderator', this.checked)"><span class="slider"></span></label>
             </div>
             <div class="module-item">
               <span class="module-name">Music</span>
-              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" onchange="toggleModule('music', this.checked)"><span class="slider"></span></label>
             </div>
             <div class="module-item">
               <span class="module-name">AutoMod</span>
-              <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" onchange="toggleModule('automod', this.checked)"><span class="slider"></span></label>
             </div>
             <div class="module-item">
               <span class="module-name">Utility</span>
-              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" onchange="toggleModule('utility', this.checked)"><span class="slider"></span></label>
             </div>
             <div class="module-item">
               <span class="module-name">Economy</span>
-              <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" onchange="toggleModule('economy', this.checked)"><span class="slider"></span></label>
             </div>
             <div class="module-item">
               <span class="module-name">Welcome</span>
-              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" onchange="toggleModule('welcome', this.checked)"><span class="slider"></span></label>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Floating Terminal Window -->
+    <!-- Live Terminal -->
     <div class="terminal-box">
-      <div class="terminal-header">
-        LIVE CHAT/COMMANDS
-        <span>— □ ✕</span>
-      </div>
-      <div class="terminal-body" id="consoleLogs">
-        <div class="log-line">[14:32] <span class="log-cmd">MEGABOT:</span> Executing !play in Gaming Nexus...</div>
-        <div class="log-line">[14:32] <span class="log-cmd">MEGABOT:</span> Executing !ban in Dev Hub...</div>
-        <div class="log-line">[14:32] <span class="log-cmd">MEGABOT:</span> Executing !help in Anime Cafe...</div>
-      </div>
+      <div class="terminal-header">LIVE SERVER LOGS</div>
+      <div class="terminal-body" id="consoleLogs"></div>
     </div>
   </div>
 
   <script>
-    // Initialize Chart.js graph
-    const ctx = document.getElementById('overviewChart').getContext('2d');
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: ['08:00', '09:00', '10:00', '12:00', '14:00', '16:00', '18:00'],
-        datasets: [{
-          label: 'Users',
-          data: [12000, 45000, 32000, 48000, 72000, 65000, 90000],
-          borderColor: '#5865f2',
-          tension: 0.4
-        }, {
-          label: 'Active Servers',
-          data: [5000, 25000, 18000, 30000, 52000, 41000, 68000],
-          borderColor: '#23a55a',
-          tension: 0.4
-        }]
-      },
-      options: {
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { color: '#262835' }, ticks: { color: '#72767d' } },
-          y: { grid: { color: '#262835' }, ticks: { color: '#72767d' } }
-        }
-      }
-    });
+    let activeServerId = null;
+    let chartInstance = null;
 
-    function logAction(actionName) {
-      const consoleBox = document.getElementById('consoleLogs');
-      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      consoleBox.innerHTML += `<div class="log-line">[${time}] <span class="log-cmd">MEGABOT:</span> Action Triggered: ${actionName}</div>`;
-      consoleBox.scrollTop = consoleBox.scrollHeight;
+    async function attemptLogin() {
+      const u = document.getElementById('username').value;
+      const p = document.getElementById('password').value;
+
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p })
+      });
+
+      if (res.ok) {
+        document.getElementById('loginOverlay').style.display = 'none';
+        initDashboard();
+      } else {
+        document.getElementById('loginError').style.display = 'block';
+      }
+    }
+
+    async function initDashboard() {
+      fetchBotInfo();
+      fetchServers();
+      setInterval(fetchBotInfo, 5000);
+      setInterval(refreshServerDetails, 3000);
+    }
+
+    async function fetchBotInfo() {
+      const res = await fetch('/api/bot-info');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('botName').innerText = data.name;
+      document.getElementById('botAvatar').src = data.avatar;
+      document.getElementById('botPing').innerText = `${data.ping}ms`;
+      document.getElementById('serversCount').innerText = data.guildsCount;
+      document.getElementById('totalMembers').innerText = data.totalMembers;
+    }
+
+    async function fetchServers() {
+      const res = await fetch('/api/servers');
+      if (!res.ok) return;
+      const servers = await res.json();
+
+      const container = document.getElementById('serversListContainer');
+      container.innerHTML = '';
+
+      servers.forEach(server => {
+        container.innerHTML += `
+          <div class="server-item">
+            <div class="server-info">
+              <img class="server-icon" src="${server.icon}" alt="Icon">
+              <div>
+                <div class="server-name">${server.name}</div>
+                <div class="server-meta">👥 ${server.memberCount} members</div>
+              </div>
+            </div>
+            <button class="btn-manage" onclick="selectServer('${server.id}')">Manage</button>
+          </div>
+        `;
+      });
+
+      if (servers.length > 0 && !activeServerId) {
+        selectServer(servers[0].id);
+      }
+    }
+
+    async function selectServer(id) {
+      activeServerId = id;
+      refreshServerDetails();
+    }
+
+    async function refreshServerDetails() {
+      if (!activeServerId) return;
+      const res = await fetch(`/api/server/${activeServerId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('activeServerTitle').innerText = `Selected Server: ${data.name}`;
+
+      // Update Chart with Real Data
+      updateChart(data.memberCount, data.channelsCount, data.rolesCount);
+
+      // Update Terminal Logs
+      const logBox = document.getElementById('consoleLogs');
+      logBox.innerHTML = '';
+      data.logs.forEach(log => {
+        logBox.innerHTML += `<div class="log-line">[${log.timestamp}] ${log.text}</div>`;
+      });
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function updateChart(members, channels, roles) {
+      const ctx = document.getElementById('overviewChart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Members', 'Channels', 'Roles'],
+          datasets: [{
+            label: 'Server Breakdown',
+            data: [members, channels, roles],
+            backgroundColor: ['#5865f2', '#23a55a', '#eb459e']
+          }]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: '#262835' }, ticks: { color: '#72767d' } },
+            y: { grid: { color: '#262835' }, ticks: { color: '#72767d' } }
+          }
+        }
+      });
+    }
+
+    async function toggleModule(moduleName, enabled) {
+      if (!activeServerId) return;
+      await fetch(`/api/server/${activeServerId}/module`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moduleName, enabled })
+      });
+      refreshServerDetails();
     }
   </script>
 </body>
