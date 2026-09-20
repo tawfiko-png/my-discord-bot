@@ -126,26 +126,33 @@ client.on('messageCreate', (message) => {
 
 // Attempt Discord Login with Explicit Error Logging
 // Attempt Discord Login with Timeout Handling
+const { REST, Routes } = require('discord.js');
+
 const token = (process.env.DISCORD_TOKEN || '').trim();
 
 if (!token) {
-  console.error('❌ CRITICAL ERROR: DISCORD_TOKEN variable is EMPTY or MISSING!');
+  console.error('❌ CRITICAL ERROR: DISCORD_TOKEN is missing or empty!');
 } else {
-  console.log(' Attempting to log into Discord...');
+  console.log('--- TESTING DISCORD REST API ACCESS ---');
   
-  // Set a 10-second timeout to alert if connection stalls
-  const loginTimeout = setTimeout(() => {
-    console.warn('⚠️ WARNING: Discord login is taking unusually long. Checking network connection...');
-  }, 10000);
+  const rest = new REST({ version: '10' }).setToken(token);
 
-  client.login(token)
-    .then(() => clearTimeout(loginTimeout))
+  // Test token against Discord REST API first
+  rest.get(Routes.user('@me'))
+    .then(user => {
+      console.log(`✅ REST API SUCCESS! Authenticated as: ${user.username}#${user.discriminator}`);
+      console.log('Connecting to WebSocket Gateway...');
+      return client.login(token);
+    })
     .catch(err => {
-      clearTimeout(loginTimeout);
-      console.error('❌ DISCORD LOGIN FAILED WITH ERROR:');
-      console.error(err);
+      console.error('❌ DISCORD API / LOGIN ERROR:');
+      console.error(err.message || err);
     });
 }
+
+app.listen(PORT, () => {
+  console.log(`🚀 Dashboard listening on port ${PORT}`);
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Dashboard listening on port ${PORT}`);
