@@ -8,7 +8,8 @@ const {
   joinVoiceChannel, 
   createAudioPlayer, 
   createAudioResource, 
-  AudioPlayerStatus 
+  AudioPlayerStatus,
+  NoSubscriberBehavior
 } = require('@discordjs/voice');
 const play = require('play-dl');
 
@@ -110,7 +111,6 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
-// Strip clutter words for clean searching
 function cleanTitle(title) {
   return title
     .replace(/[\(\[\{].*?(official\vert{}music\vert{}video\vert{}audio\vert{}lyric\vert{}hd\vert{}4k).*?[\)\]\}]/gi, '')
@@ -118,14 +118,12 @@ function cleanTitle(title) {
     .trim();
 }
 
-// Extract Video ID from any YouTube URL
 function extractYouTubeVideoId(url) {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
-// Fetch YouTube title via oEmbed API
 function fetchYouTubeTitleViaOEmbed(videoId) {
   return new Promise((resolve) => {
     const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
@@ -144,7 +142,6 @@ function fetchYouTubeTitleViaOEmbed(videoId) {
   });
 }
 
-// Perform SoundCloud lookup with error handling
 async function searchSoundCloudTrack(query) {
   try {
     const cleaned = cleanTitle(query);
@@ -174,16 +171,17 @@ async function playNextSong(guildId, messageChannel) {
   const currentSong = serverQueue.songs[0];
 
   try {
-    const stream = await play.stream(currentSong.url);
+    // Stream via play-dl with error handling
+    const stream = await play.stream(currentSong.url, { quality: 2 });
     const resource = createAudioResource(stream.stream, { inputType: stream.type });
 
     serverQueue.player.play(resource);
-    serverQueue.connection.subscribe(serverQueue.connection ? serverQueue.player : null);
+    serverQueue.connection.subscribe(serverQueue.player);
 
     messageChannel.send(`🎶 Now playing: **${currentSong.title}**`);
   } catch (error) {
-    console.error('Playback error details:', error);
-    messageChannel.send(`❌ Could not play **${currentSong.title}**. Skipping to next...`);
+    console.error('Playback error:', error);
+    messageChannel.send(`❌ Error playing **${currentSong.title}**. Trying next song...`);
     serverQueue.songs.shift();
     playNextSong(guildId, messageChannel);
   }
@@ -239,25 +237,24 @@ client.on('messageCreate', async (message) => {
         let foundTrack = null;
         let searchQuery = rawQuery;
 
-        // Step 1: Check if input is a YouTube URL
         const videoId = extractYouTubeVideoId(rawQuery);
         if (videoId) {
           const ytTitle = await fetchYouTubeTitleViaOEmbed(videoId);
           if (ytTitle) searchQuery = ytTitle;
         }
 
-        // Step 2: Perform track search on SoundCloud
+        // Try SoundCloud search first
         foundTrack = await searchSoundCloudTrack(searchQuery);
 
-        // Step 3: If plain search fails, try YouTube search fallback to refine the title
-        if (!foundTrack && !videoId) {
+        // Fallback: If SoundCloud search returned nothing, search YouTube for url
+        if (!foundTrack) {
           try {
             const ytResults = await play.search(searchQuery, { limit: 1 });
             if (ytResults && ytResults.length > 0) {
-              foundTrack = await searchSoundCloudTrack(ytResults[0].title);
+              foundTrack = { url: ytResults[0].url, title: ytResults[0].title };
             }
           } catch (ytErr) {
-            console.error('YouTube Fallback Error:', ytErr.message);
+            console.error('YouTube search fallback failed:', ytErr.message);
           }
         }
 
@@ -268,11 +265,17 @@ client.on('messageCreate', async (message) => {
         const song = { title: foundTrack.title, url: foundTrack.url };
 
         if (!serverQueue) {
+          const player = createAudioPlayer({
+            behaviors: {
+              noSubscriber: NoSubscriberBehavior.Play
+            }
+          });
+
           const queueConstruct = {
             voiceChannel: voiceChannel,
             textChannel: message.channel,
             connection: null,
-            player: createAudioPlayer(),
+            player: player,
             songs: [],
             playing: true
           };
@@ -284,11 +287,18 @@ client.on('messageCreate', async (message) => {
             channelId: voiceChannel.id,
             guildId: message.guild.id,
             adapterCreator: message.guild.voiceAdapterCreator,
+            selfDeaf: true
           });
 
           queueConstruct.connection = connection;
 
           queueConstruct.player.on(AudioPlayerStatus.Idle, () => {
+            queueConstruct.songs.shift();
+            playNextSong(message.guild.id, message.channel);
+          });
+
+          queueConstruct.player.on('error', (err) => {
+            console.error('Audio Player Error:', err.message);
             queueConstruct.songs.shift();
             playNextSong(message.guild.id, message.channel);
           });
