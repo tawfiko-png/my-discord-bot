@@ -125,7 +125,7 @@ function extractYouTubeVideoId(url) {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
-// Fetch YouTube title via unblocked public oEmbed API
+// Fetch YouTube title via oEmbed API
 function fetchYouTubeTitleViaOEmbed(videoId) {
   return new Promise((resolve) => {
     const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
@@ -223,23 +223,17 @@ client.on('messageCreate', async (message) => {
         let trackTitle = '';
         let searchQuery = rawQuery;
 
-        // Step 1: Check if input is a YouTube URL
+        // Step 1: Check if input is YouTube URL
         const videoId = extractYouTubeVideoId(rawQuery);
         if (videoId) {
           const ytTitle = await fetchYouTubeTitleViaOEmbed(videoId);
-          if (ytTitle) {
-            searchQuery = ytTitle;
-          }
+          if (ytTitle) searchQuery = ytTitle;
         }
 
-        // Step 2: Clean the search string for SoundCloud
-        const cleanedQuery = cleanTitle(searchQuery);
+        // Step 2: Try Searching SoundCloud directly first
+        let scResults = await play.search(cleanTitle(searchQuery), { source: { soundcloud: 'tracks' }, limit: 1 });
 
-        // Step 3: Search SoundCloud
-        let scResults = await play.search(cleanedQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
-
-        // Fallback to raw query if cleaned query yields 0 results
-        if ((!scResults || scResults.length === 0) && cleanedQuery !== searchQuery) {
+        if (!scResults || scResults.length === 0) {
           scResults = await play.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 });
         }
 
@@ -247,7 +241,20 @@ client.on('messageCreate', async (message) => {
           trackUrl = scResults[0].url;
           trackTitle = scResults[0].name;
         } else {
-          return message.reply(`❌ No track found on SoundCloud for: **${cleanedQuery || searchQuery}**`);
+          // Fallback: search YouTube for track name to extract accurate title then search SC
+          const ytSearch = await play.search(searchQuery, { limit: 1 });
+          if (ytSearch && ytSearch.length > 0) {
+            const refinedTitle = cleanTitle(ytSearch[0].title);
+            scResults = await play.search(refinedTitle, { source: { soundcloud: 'tracks' }, limit: 1 });
+            if (scResults && scResults.length > 0) {
+              trackUrl = scResults[0].url;
+              trackTitle = scResults[0].name;
+            }
+          }
+        }
+
+        if (!trackUrl) {
+          return message.reply(`❌ No track found on SoundCloud for: **${searchQuery}**`);
         }
 
         const song = { title: trackTitle, url: trackUrl };
