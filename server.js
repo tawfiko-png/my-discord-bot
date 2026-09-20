@@ -122,24 +122,44 @@ client.on('messageCreate', (message) => {
 });
 
 // Authentication and Gateway Login
-const token = (process.env.DISCORD_TOKEN || '').trim();
+// Direct HTTPS Fetch for Discord API Diagnostic
+const token = (process.env.DISCORD_TOKEN || '').replace(/[\r\n\t ]/g, ''); // Clean whitespace/newlines
 
 if (!token) {
-  console.error('❌ CRITICAL ERROR: DISCORD_TOKEN is missing or empty!');
+  console.error('❌ CRITICAL ERROR: DISCORD_TOKEN environment variable is empty!');
 } else {
-  console.log('--- TESTING DISCORD REST API ACCESS ---');
-  const rest = new REST({ version: '10' }).setToken(token);
+  console.log('--- TESTING DIRECT DISCORD REST CONNECTION ---');
 
-  rest.get(Routes.user('@me'))
-    .then(user => {
-      console.log(`✅ REST API SUCCESS! Authenticated as: ${user.username}#${user.discriminator || '0'}`);
-      console.log('Connecting to Discord WebSocket Gateway...');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout safeguard
+
+  fetch('https://discord.com/api/v10/users/@me', {
+    headers: {
+      'Authorization': `Bot ${token}`,
+      'User-Agent': 'DiscordBot (https://github.com/discordjs/discord.js, 14.14.1)'
+    },
+    signal: controller.signal
+  })
+  .then(async res => {
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      console.log(`✅ DISCORD AUTH SUCCESS! Logged in as: ${data.username}#${data.discriminator}`);
+      console.log('Connecting to WebSocket Gateway...');
       return client.login(token);
-    })
-    .catch(err => {
-      console.error('❌ DISCORD API / LOGIN ERROR:');
-      console.error(err.message || err);
-    });
+    } else {
+      const errorText = await res.text();
+      console.error(`❌ DISCORD API REJECTED TOKEN (HTTP ${res.status}): ${errorText}`);
+    }
+  })
+  .catch(err => {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      console.error('❌ DISCORD API TIMEOUT: Render server cannot reach discord.com (Network/IP Block).');
+    } else {
+      console.error('❌ DISCORD CONNECTION ERROR:', err.message);
+    }
+  });
 }
 
 // Single Express Listener
