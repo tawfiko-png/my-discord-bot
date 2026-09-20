@@ -7,11 +7,9 @@ const {
   joinVoiceChannel, 
   createAudioPlayer, 
   createAudioResource, 
-  AudioPlayerStatus, 
-  StreamType 
+  AudioPlayerStatus 
 } = require('@discordjs/voice');
 const play = require('play-dl');
-const ytdl = require('@distube/ytdl-core');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -111,6 +109,7 @@ app.post('/api/server/:id/module', (req, res) => {
   res.json({ success: true, modules: serverModules[guildId] });
 });
 
+// Play Next Song Routine
 async function playNextSong(guildId, messageChannel) {
   const serverQueue = musicQueues.get(guildId);
   if (!serverQueue) return;
@@ -124,15 +123,8 @@ async function playNextSong(guildId, messageChannel) {
   const currentSong = serverQueue.songs[0];
 
   try {
-    const stream = ytdl(currentSong.url, {
-      filter: 'audioonly',
-      highWaterMark: 1 << 25,
-      quality: 'highestaudio'
-    });
-
-    const resource = createAudioResource(stream, { 
-      inputType: StreamType.Arbitrary 
-    });
+    const stream = await play.stream(currentSong.url);
+    const resource = createAudioResource(stream.stream, { inputType: stream.type });
 
     serverQueue.player.play(resource);
     serverQueue.connection.subscribe(serverQueue.player);
@@ -146,7 +138,7 @@ async function playNextSong(guildId, messageChannel) {
   }
 }
 
-client.once('ready', () => {
+client.on('clientReady', () => {
   console.log(`✅ BOT IS ONLINE! Logged in as: ${client.user.tag}`);
 });
 
@@ -182,25 +174,23 @@ client.on('messageCreate', async (message) => {
 
     if (command === '!play' || command === '!p') {
       const query = args.join(' ');
-      if (!query) return message.reply('❌ Please provide a song name or YouTube link! Usage: `!play song name`');
+      if (!query) return message.reply('❌ Please provide a song name! Usage: `!play song name`');
 
       try {
-        let songUrl = query;
-        let songTitle = query;
+        let trackUrl = '';
+        let trackTitle = '';
 
-        if (!ytdl.validateURL(query)) {
-          const ytInfo = await play.search(query, { limit: 1 });
-          if (!ytInfo || ytInfo.length === 0) {
-            return message.reply('❌ No results found on YouTube.');
-          }
-          songUrl = ytInfo[0].url;
-          songTitle = ytInfo[0].title;
+        // Search SoundCloud directly to bypass YouTube datacenter blocks
+        const scResults = await play.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+
+        if (scResults && scResults.length > 0) {
+          trackUrl = scResults[0].url;
+          trackTitle = scResults[0].name;
         } else {
-          const info = await ytdl.getBasicInfo(query);
-          songTitle = info.videoDetails.title;
+          return message.reply('❌ No results found on SoundCloud.');
         }
 
-        const song = { title: songTitle, url: songUrl };
+        const song = { title: trackTitle, url: trackUrl };
 
         if (!serverQueue) {
           const queueConstruct = {
@@ -234,7 +224,7 @@ client.on('messageCreate', async (message) => {
           return message.reply(`✅ Added **${song.title}** to the queue! (Position #${serverQueue.songs.length})`);
         }
       } catch (err) {
-        console.error('Play error:', err);
+        console.error('Play command error:', err);
         return message.reply('❌ Failed to process music command.');
       }
     }
