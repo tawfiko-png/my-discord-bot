@@ -1,12 +1,11 @@
 {
-  "name": "iscream-bot-dashboard",
+  "name": "my-discord-bot",
   "version": "1.0.0",
-  "description": "ISCREAM BOT with Web Control Panel",
+  "description": "Discord Bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  {
   "dependencies": {
     "@discordjs/voice": "^0.18.0",
     "@distube/ytdl-core": "^4.16.10",
